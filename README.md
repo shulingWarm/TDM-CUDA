@@ -103,4 +103,4 @@ $3\times H\times W$个uchar: 表示正射影像图片的颜色数据，通道顺
 
 ## 是否有对应的用户界面？
 
-这个项目是有用户界面的，用户界面的链接:[项目链接]([GitHub - shulingWarm/TDM-CUDA-GUI: TDM-CUDA的用户界面](https://github.com/shulingWarm/TDM-CUDA-GUI))
+这个项目是有用户界面的，用户界面的链接:[项目链接](https://github.com/shulingWarm/TDM-CUDA-GUI)
