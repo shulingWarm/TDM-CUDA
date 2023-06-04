@@ -48,10 +48,16 @@ sudo apt install libopencv-dev
 
 ### ZeroMQ
 
-会用到它进行进程间通信
+会用到它进行进程间通信,**注意zmq库需要使用源码编译**，只有源码编译的库才会提供ConfigZeroMq的库才能被find_package找到。
 
 ```shell
-sudo apt install libzmq3-dev
+git clone https://github.com/zeromq/libzmq.git
+cd libzmq
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
 ```
 
 ## 构建的命令

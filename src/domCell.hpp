@@ -16,5 +16,5 @@ public:
 	//每个网格单元剩余的可参考次数
 	uint8_t refTime=INIT_REF;
 	//当前网格单元的分数
-	ScoreType score=0;
+	ScoreType score=-2;
 };

@@ -1,0 +1,3 @@
+/media/zzh/data/privateSpace/workSpace/164CUDA-TDM/src/build/CMakeFiles/edit_cache.dir
+/media/zzh/data/privateSpace/workSpace/164CUDA-TDM/src/build/CMakeFiles/rebuild_cache.dir
+/media/zzh/data/privateSpace/workSpace/164CUDA-TDM/src/build/CMakeFiles/directDOM.dir

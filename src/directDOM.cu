@@ -174,7 +174,6 @@ void domGenerate(std::istream& taskHandle,cv::Mat& domResult)
 	//接收里面的点云
 	std::vector<float> pointcloud(cloudNum*3);
 	taskHandle.read((char*)pointcloud.data(),sizeof(float)*pointcloud.size());
-	std::cout<<"cloud back "<<pointcloud.back()<<std::endl;
 	//读取相机的个数
 	unsigned poseNum;
 	taskHandle.read((char*)&poseNum,sizeof(unsigned));
@@ -251,8 +250,11 @@ int main(int argc,char** argv)
 		//发送图片的宽和高
 		unsigned domSize[2]={domResult.cols,domResult.rows};
 		connection.write((char*)domSize,sizeof(unsigned)*2);
-		//写入图片的数据
-		connection.write((char*)domResult.data,sizeof(uchar)*domSize[0]*domSize[1]*3);
+		//写入图片每一行的数据，opencv行之间可能会为了对齐出现一些没用的空字节
+		for(unsigned idRow=0;idRow<domResult.rows;++idRow)
+		{
+			connection.write((char*)domResult.ptr<uchar>(idRow),sizeof(uchar)*domResult.cols*3);
+		}
 		//把回传和消息送回去
 		connection.send();
 	}

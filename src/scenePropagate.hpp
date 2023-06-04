@@ -10,6 +10,7 @@
 
 #define WINDOWS_SIZE 3
 #define REF_CELL_INIT 999999
+#define THREAD_FIT_SIZE 64
 
 //错误的投影数据，对于某个位置，如果它不存在投影向量，就把它记录成这个数字，表示这个投影颜色是非法的
 #define INVALID_PIXEL -888888
@@ -86,92 +87,57 @@ public:
 };
 
 //分配每个网格单元属于哪个相机组
-__global__ void makeBestCameraGroup(Scene* cudaScene,
-	Grid3D<CellDisToCamera>* gpuCellDisInfo)
+__global__ void makeBestCameraGroup(Scene* cudaScene)
 {
-	//当前的网格单元对应的水平位置
-	__shared__ float planeLocal[2];
-	//共享内存，当前网格单元到其它的相机中心的水平距离
-	__shared__ CellDisToCamera* cellDisInfo;
-	//二分查找的遍历范围
-	__shared__ unsigned iterateRange;
-	//由第1个线程初始化共享内存
-	if(threadIdx.x==0)
+	//当前位置的bloxk,x,y,为了充分利用每个线程块，这里专程给每个线程块安排了64个线程
+	unsigned domXy[2]={blockIdx.x*THREAD_FIT_SIZE+threadIdx.x,blockIdx.y};
+	//如果超过了范围的边界就不需要处理了
+	if(domXy[0]>=cudaScene->grid->gridInfo.gridSize[0] ||
+		domXy[1]>=cudaScene->grid->gridInfo.gridSize[1])
 	{
-		iterateRange=(cudaScene->viewNum+1)/2;
+		return;
 	}
-	else if(threadIdx.x==1)
+	//当前位置待处理的cell
+	auto* targetCell=cudaScene->grid->getDataAt(domXy[0],domXy[1]);
+	//如果目标的cell不是一个种子单元，也不必专程去计算它
+	if(targetCell->z_ < 0)
 	{
-		//初始化当前点的水平位置
-		planeLocal[0]=cudaScene->grid->gridInfo.toWorldCoord(0,blockIdx.x);
-		planeLocal[1]=cudaScene->grid->gridInfo.toWorldCoord(1,blockIdx.y);
+		targetCell->idGroup=0;
+		return;
 	}
-	else if(threadIdx.x==2)
+	//计算当前网格对应的浮点型二维点
+	float worldPoint[2]={
+		cudaScene->grid->gridInfo.toWorldCoord(0,domXy[0]),
+		cudaScene->grid->gridInfo.toWorldCoord(1,domXy[1])
+	};
+	//初始化最佳的view标号和最佳的距离
+	float minDistance=99999999;
+	unsigned bestViewId=0;
+	//遍历计算每个view的水平距离
+	for(unsigned idView=0;idView<cudaScene->viewNum;++idView)
 	{
-		//从全局内存里面获取属于本线程块的中间变量
-		cellDisInfo=gpuCellDisInfo->getDataAt(blockIdx.x,blockIdx.y,0);
-	}
-	__syncthreads();
-	//计算当前线程负责的相机到planeLocal的距离
-	cellDisInfo[threadIdx.x].planeDisToOthers=getPlaneDis(planeLocal,cudaScene->viewList[threadIdx.x].center);
-	//把标号保存成当前线程的标号
-	cellDisInfo[threadIdx.x].idView=threadIdx.x;
-	__syncthreads();
-	//循环进行二分选择最优
-	while(iterateRange>0)
-	{
-		//只有在遍历范围内的才需要处理，并且需要保证比较的位置也没有超界
-		if(threadIdx.x<iterateRange && threadIdx.x+iterateRange<cudaScene->viewNum)
+		//计算临时的距离
+		float tempDis=getPlaneDis(worldPoint,cudaScene->viewList[idView].center);
+		//判断是不是更近的距离
+		if(tempDis<minDistance)
 		{
-			//判断比较位置的距离是否比当前的距离更小
-			if(cellDisInfo[threadIdx.x + iterateRange].planeDisToOthers < 
-				cellDisInfo[threadIdx.x].planeDisToOthers)
-			{
-				//把比较位置的网格单元信息更新到当前的位置
-				cellDisInfo[threadIdx.x]=cellDisInfo[threadIdx.x + iterateRange];
-			}
+			minDistance=tempDis;
+			bestViewId=idView;
 		}
-		__syncthreads();
-		//由第1个线程更新下一个周期的迭代信息
-		if(threadIdx.x==0)
-		{
-			//如果已经是1了，直接更新成0
-			if(iterateRange==1)
-			{
-				iterateRange=0;
-			}
-			else
-			{
-				iterateRange=(iterateRange+1)/2;
-			}
-		}
-		__syncthreads();
 	}
-	//把最后得到的最佳相机组更新到view信息里面
-	if(threadIdx.x==0)
-	{
-		cudaScene->grid->getDataAt(blockIdx.x,blockIdx.y)->idGroup=cellDisInfo[0].idView;
-	}
+	//把最后得到的viewid记录下来
+	targetCell->idGroup=bestViewId;
 }
 
 //准备每个相机的相机组
 void prepareCameraGroup(Scene* cpuScene,
 	Scene* cudaScene,float avgHeight)
 {
-	//调用核函数
+	//调用核函数 准备每个相机的相机组
 	kernelPrepareCameraGroup<<<cpuScene->viewNum,cpuScene->viewNum>>>(cudaScene,avgHeight);
-	//需要准备一个三维网格，同样需要准备一个getDataAt 这只是一个中间变量
-	Grid3D<CellDisToCamera> cpuCellDisInfo;
-	cpuCellDisInfo.cudaInit(cpuScene->grid->gridInfo.gridSize[0],cpuScene->grid->gridInfo.gridSize[1],
-		cpuScene->viewNum);
-	//cuda形式的三维网格
-	Grid3D<CellDisToCamera>* gpuCellDisInfo=cpuCellDisInfo.toCuda();
 	//准备每个网格单元属于哪个相机组
-	makeBestCameraGroup<<<dim3(cpuScene->grid->gridInfo.gridSize[0],
-		cpuScene->grid->gridInfo.gridSize[1],1),cpuScene->viewNum>>>(cudaScene,gpuCellDisInfo);
-	//释放三维网格
-	handleError(cudaFree(cpuCellDisInfo.data));
-	handleError(cudaFree(gpuCellDisInfo));
+	makeBestCameraGroup<<<dim3(cpuScene->grid->gridInfo.gridSize[0]/THREAD_FIT_SIZE+1,
+		cpuScene->grid->gridInfo.gridSize[1],1),THREAD_FIT_SIZE>>>(cudaScene);
 }
 
 //一个图上的颜色向量的信息

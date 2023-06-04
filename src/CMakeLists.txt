@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.2)
 project(CUDATDM)
 #寻找进程间通信用的库
-find_package(ZeroMQ REQUIRED)
+find_package(ZeroMQ PATHS "/media/zzh/data/lib/zeromq/install/lib/cmake/ZeroMQ" REQUIRED)
 include_directories(${ZeroMQ_INCLUDE_DIR})
 include_directories(${CMAKE_SOURCE_DIR})
 find_package(CUDA REQUIRED)
